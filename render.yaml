@@ -1,6 +1,6 @@
 services:
     - type: web
-    name: kazan-md-roi-original
+      name: kazan-md-roi-original
     env: node
     plan: free
     buildCommand: npm install
@@ -16,5 +16,7 @@ services:
         value: .
             - key: PHONE_NUMBER
         value: 22891847613
+            - key: SESSION_ID
+        value: KAZAN-MD
             - key: PAIRING_CODE
         value: true
