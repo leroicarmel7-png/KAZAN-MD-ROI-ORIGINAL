@@ -11,11 +11,11 @@ services:
       - key: NODE_VERSION
         value: 20.18.1
       - key: OWNER_NUMBER
-        value: "243981776812"
+        value: "22873063208"
       - key: PREFIX
         value: "."
       - key: PHONE_NUMBER
-        value: "243981776812"
+        value: "243981776"
       - key: SESSION_ID
         value: KAZAN-MD
       - key: PAIRING_CODE
