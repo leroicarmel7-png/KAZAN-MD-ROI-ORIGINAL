@@ -41,6 +41,7 @@ async function start() {
   })
 
   if (!sock.authState.creds.registered) {
+    await new Promise(resolve => setTimeout(resolve, 3000))
     const number = botConfig.ownerNumber.replace(/[^0-9]/g, "")
     const code = await sock.requestPairingCode(number)
     console.log(`\n\n🔑 PAIRING CODE: ${code}\n\n`)
