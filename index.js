@@ -11,6 +11,9 @@ import http from "http"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+let currentPairingCode = null
+let currentSock = null
+
 async function loadCommands() {
   const commands = new Map()
   const folders = ["group","download","tools","game"]
@@ -28,7 +31,7 @@ async function loadCommands() {
   return commands
 }
 
-async function start() {
+async function start(customNumber) {
   const { state, saveCreds } = await useMultiFileAuthState("auth")
   const commands = await loadCommands()
   const { version } = await fetchLatestBaileysVersion()
@@ -41,11 +44,13 @@ async function start() {
     printQRInTerminal: false,
     browser: ["KAZAN MD", "Chrome", "2.0"]
   })
+  currentSock = sock
 
   if (!sock.authState.creds.registered) {
     await new Promise(resolve => setTimeout(resolve, 3000))
-    const number = botConfig.ownerNumber.replace(/[^0-9]/g, "")
+    const number = (customNumber || botConfig.ownerNumber).replace(/[^0-9]/g, "")
     const code = await sock.requestPairingCode(number)
+    currentPairingCode = code
     console.log(`\n\n🔑 PAIRING CODE: ${code}\n\n`)
   }
 
@@ -56,6 +61,7 @@ async function start() {
       const shouldReconnect = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true
       if (shouldReconnect) start()
     } else if (connection === "open") {
+      currentPairingCode = null
       console.log("✅ KAZAN CONNECTÉ - /ROI†🌹ORIGINAL•🐦‍🔥KAZAN")
     }
   })
@@ -103,6 +109,38 @@ async function start() {
   })
 }
 
-http.createServer((req, res) => res.end("KAZAN MD is running")).listen(process.env.PORT || 3000)
+const server = http.createServer((req, res) => {
+  if (req.method === "GET" && req.url === "/") {
+    res.writeHead(200, { "Content-Type": "text/html" })
+    res.end(`
+      <html>
+      <head><title>KAZAN MD - Pairing</title></head>
+      <body style="font-family:sans-serif;text-align:center;padding:40px;background:#111;color:#fff;">
+        <h1>🔑 KAZAN MD</h1>
+        <form method="POST" action="/pair">
+          <input name="number" placeholder="Ex: 22891847613" style="padding:10px;width:250px;font-size:16px;" required />
+          <button type="submit" style="padding:10px 20px;font-size:16px;">Obtenir le code</button>
+        </form>
+        ${currentPairingCode ? `<h2 style="color:#0f0;">Code: ${currentPairingCode}</h2>` : ""}
+      </body>
+      </html>
+    `)
+  } else if (req.method === "POST" && req.url === "/pair") {
+    let body = ""
+    req.on("data", chunk => body += chunk)
+    req.on("end", async () => {
+      const params = new URLSearchParams(body)
+      const number = params.get("number")
+      currentPairingCode = null
+      await start(number)
+      res.writeHead(302, { Location: "/" })
+      res.end()
+    })
+  } else {
+    res.end("KAZAN MD is running")
+  }
+})
+
+server.listen(process.env.PORT || 3000)
 
 start()
