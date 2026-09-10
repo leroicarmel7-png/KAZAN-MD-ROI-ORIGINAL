@@ -1,6 +1,6 @@
 export const botConfig = {
   ownerName: "/ROI\†🌹ORIGINAL•🐦‍🔥KAZAN",
-  ownerNumber: "22891847613", // << CHANGE ICI TON NUMÉRO
+  ownerNumber: "243981776812", // << CHANGE ICI TON NUMÉRO
   ownerTag: "Lrxd Carmel",
   botName: "KAZAN MD",
   prefix: ".",
