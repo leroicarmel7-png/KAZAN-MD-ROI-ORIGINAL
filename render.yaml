@@ -15,7 +15,7 @@ services:
       - key: PREFIX
         value: "."
       - key: PHONE_NUMBER
-        value: "22891847613"
+        value: "243981776812"
       - key: SESSION_ID
         value: KAZAN-MD
       - key: PAIRING_CODE
