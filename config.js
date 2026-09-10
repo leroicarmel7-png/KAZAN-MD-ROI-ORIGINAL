@@ -2,7 +2,7 @@ export const botConfig = {
   ownerName: "/ROI\†🌹ORIGINAL•🐦‍🔥KAZAN",
   ownerNumber: "243981776812", // << CHANGE ICI TON NUMÉRO
   ownerTag: "Lrxd Carmel",
-  botName: "KAZAN MD",
+  botName: "𝐋Ξ𝐑Ø𝐈-MD",
   prefix: ".",
   version: "2.0 BETA",
   mode: "private",
