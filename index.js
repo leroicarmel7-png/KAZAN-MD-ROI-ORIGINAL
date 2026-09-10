@@ -7,6 +7,7 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import { botConfig } from "./config.js"
+import http from "http"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -47,7 +48,7 @@ async function start() {
       const shouldReconnect = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true
       if (shouldReconnect) start()
     } else if (connection === "open") {
-      console.log("✅ KAZAN CONNECTÉ - ༼ 𝐑Ø𝐈༽ †🌹ᴼᴿᴵᴳᴵᴺᴬᴸ•🐦‍🔥𝐊𝐀𝐙𝐀𝐍")
+      console.log("✅ KAZAN CONNECTÉ - /ROI†🌹ORIGINAL•🐦‍🔥KAZAN")
     }
   })
 
@@ -95,5 +96,7 @@ async function start() {
     }
   })
 }
+
+http.createServer((req, res) => res.end("KAZAN MD is running")).listen(process.env.PORT || 3000)
 
 start()
