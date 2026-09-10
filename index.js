@@ -57,14 +57,15 @@ async function start(customNumber) {
   sock.ev.on("creds.update", saveCreds)
 
   sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
-    if (connection === "close") {
-      const shouldReconnect = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true
-      if (shouldReconnect) start()
-    } else if (connection === "open") {
-      currentPairingCode = null
-      console.log("✅ KAZAN CONNECTÉ - /ROI†🌹ORIGINAL•🐦‍🔥KAZAN")
+  if (connection === "close") {
+    const shouldReconnect = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true
+    if (shouldReconnect && sock.authState.creds.registered) {
+      start()
     }
-  })
+  } else if (connection === "open") {
+    console.log("✅ KAZAN CONNECTÉ - /ROI†🌹ORIGINAL•🐦‍🔥KAZAN")
+  }
+})
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const m = messages[0]
