@@ -1,5 +1,6 @@
 
-import makeWASocket, { useMultiFileAuthState, DisconnectReason } from "@whiskeysockets/baileys"
+import pkg from "@whiskeysockets/baileys"
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = pkg
 import { Boom } from "@hapi/boom"
 import pino from "pino"
 import fs from "fs"
