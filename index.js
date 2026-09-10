@@ -1,4 +1,3 @@
-
 import pkg from "@whiskeysockets/baileys"
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = pkg
 import { Boom } from "@hapi/boom"
@@ -37,9 +36,15 @@ async function start() {
   const sock = makeWASocket({
     auth: state,
     logger: pino({ level: "silent" }),
-    printQRInTerminal: true,
+    printQRInTerminal: false,
     browser: ["KAZAN MD", "Chrome", "2.0"]
   })
+
+  if (!sock.authState.creds.registered) {
+    const number = botConfig.ownerNumber.replace(/[^0-9]/g, "")
+    const code = await sock.requestPairingCode(number)
+    console.log(`\n\n🔑 PAIRING CODE: ${code}\n\n`)
+  }
 
   sock.ev.on("creds.update", saveCreds)
 
@@ -65,7 +70,6 @@ async function start() {
     const command = commands.get(cmdName)
     if (!command) return
 
-    // Group metadata for admin checks
     let isAdmin = false, isBotAdmin = false, groupMetadata = null
     if (isGroup) {
       try {
@@ -77,7 +81,6 @@ async function start() {
       } catch {}
     }
 
-    // quoted helper for VV
     const quoted = m.message.extendedTextMessage?.contextInfo?.quotedMessage
     if (quoted) {
       m.quoted = {
