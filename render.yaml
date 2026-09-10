@@ -11,7 +11,7 @@ services:
       - key: NODE_VERSION
         value: 20.18.1
       - key: OWNER_NUMBER
-        value: "22891847613"
+        value: "243981776812"
       - key: PREFIX
         value: "."
       - key: PHONE_NUMBER
