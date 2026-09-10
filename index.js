@@ -47,11 +47,12 @@ async function start(customNumber) {
   currentSock = sock
 
   if (!sock.authState.creds.registered) {
-    await new Promise(resolve => setTimeout(resolve, 3000))
-    const number = (customNumber || botConfig.ownerNumber).replace(/[^0-9]/g, "")
-    const code = await sock.requestPairingCode(number)
-    currentPairingCode = code
-    console.log(`\n\n🔑 PAIRING CODE: ${code}\n\n`)
+  await new Promise(resolve => setTimeout(resolve, 3000))
+  const number = (customNumber || botConfig.ownerNumber).replace(/[^0-9]/g, "")
+  console.log(`\n\n📱 NUMÉRO UTILISÉ: ${number}\n\n`)
+  const code = await sock.requestPairingCode(number)
+  currentPairingCode = code
+  console.log(`\n\n🔑 PAIRING CODE: ${code}\n\n`)
   }
 
   sock.ev.on("creds.update", saveCreds)
