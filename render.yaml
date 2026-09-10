@@ -1,22 +1,22 @@
 services:
-    - type: web
+  - type: web
     name: kazan-md-roi-original
     env: node
     plan: free
     buildCommand: npm install
     startCommand: node index.js
     envVars:
-            - key: NODE_ENV
+      - key: NODE_ENV
         value: production
-            - key: NODE_VERSION
+      - key: NODE_VERSION
         value: 20.18.1
-            - key: OWNER_NUMBER
-        value: 22891847613
-            - key: PREFIX
-        value: .
-            - key: PHONE_NUMBER
-        value: 22891847613
-            - key: SESSION_ID
+      - key: OWNER_NUMBER
+        value: "22891847613"
+      - key: PREFIX
+        value: "."
+      - key: PHONE_NUMBER
+        value: "22891847613"
+      - key: SESSION_ID
         value: KAZAN-MD
-            - key: PAIRING_CODE
-        value: true
+      - key: PAIRING_CODE
+        value: "true"
