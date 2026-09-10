@@ -1,5 +1,5 @@
 import pkg from "@whiskeysockets/baileys"
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = pkg
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = pkg
 import { Boom } from "@hapi/boom"
 import pino from "pino"
 import fs from "fs"
@@ -36,14 +36,14 @@ async function start(customNumber) {
   const commands = await loadCommands()
   const { version } = await fetchLatestBaileysVersion()
   console.log(`[KAZAN] ${commands.size} commandes chargées | Owner: ${botConfig.ownerName}`)
-
   const sock = makeWASocket({
-    version,
-    auth: state,
-    logger: pino({ level: "silent" }),
-    printQRInTerminal: false,
-    browser: ["KAZAN MD", "Chrome", "2.0"]
-  })
+  version,
+  auth: state,
+  logger: pino({ level: "silent" }),
+  printQRInTerminal: false,
+  browser: Browsers.ubuntu("Chrome")
+})
+  
   currentSock = sock
 
   if (!sock.authState.creds.registered) {
