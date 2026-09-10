@@ -1,0 +1,1 @@
+export default { name:"del", async execute(sock,m){if(!m.message.extendedTextMessage?.contextInfo?.stanzaId)return;await sock.sendMessage(m.key.remoteJid,{delete: { remoteJid: m.key.remoteJid, fromMe: false, id: m.message.extendedTextMessage.contextInfo.stanzaId, participant: m.message.extendedTextMessage.contextInfo.participant }})} }

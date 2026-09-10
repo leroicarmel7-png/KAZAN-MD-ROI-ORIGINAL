@@ -1,0 +1,1 @@
+export default { name:"promote", async execute(sock,m,args,{isAdmin,isBotAdmin,from}){if(!isAdmin)return;let target=m.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];if(!target)return;await sock.groupParticipantsUpdate(from,[target],"promote");m.reply(`Promu @${target.split("@")[0]} par ${"༼ 𝐑Ø𝐈༽ †🌹ᴼᴿᴵᴳᴵᴺᴬᴸ•🐦‍🔥𝐊𝐀𝐙𝐀𝐍"}`,{mentions:[target]})} }

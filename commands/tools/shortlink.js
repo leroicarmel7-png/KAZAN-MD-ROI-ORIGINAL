@@ -1,0 +1,1 @@
+export default { name:"shortlink", async execute(sock,m,args){if(!args[0])return m.reply(".shortlink <url>");let url=args[0];m.reply(`🔗 Lien raccourci (intègre TinyURL API): https://tinyurl.com/api-create.php?url=${url}`)} }

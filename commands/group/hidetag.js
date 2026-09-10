@@ -1,0 +1,1 @@
+export default { name: "hidetag", alias:["everyone"], async execute(sock,m,args,{groupMetadata,from}){let t=groupMetadata.participants.map(p=>p.id);await sock.sendMessage(from,{text: args.join(" ") || "༼ 𝐑Ø𝐈༽ †🌹ᴼᴿᴵᴳᴵᴺᴬᴸ•🐦‍🔥𝐊𝐀𝐙𝐀𝐍", mentions:t})} }

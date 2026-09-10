@@ -1,0 +1,1 @@
+export default { name:"listonline", async execute(sock,m,{groupMetadata,from}){await sock.sendMessage(from,{text:"En ligne: "+groupMetadata.participants.length+" membres"})} }

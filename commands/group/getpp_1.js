@@ -1,0 +1,1 @@
+export default { name:"getpp", async execute(sock,m,{from}){let jid=m.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0]||m.key.participant;try{let url=await sock.profilePictureUrl(jid,"image");await sock.sendMessage(from,{image:{url},caption:"PP de @"+jid.split("@")[0]},{mentions:[jid]})}catch{m.reply("Pas de PP")}} }

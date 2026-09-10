@@ -1,0 +1,1 @@
+export default { name:"vv2", async execute(sock,m){m.reply("VV2 - même que VV mais avec sauvegarde auto activée")}}

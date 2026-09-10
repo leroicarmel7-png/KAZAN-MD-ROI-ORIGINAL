@@ -1,0 +1,1 @@
+export default { name: "tagall", async execute(sock,m,args,{groupMetadata,from}){let t=groupMetadata.participants.map(p=>p.id);let txt=`༼ 𝐑Ø𝐈༽ †🌹ᴼᴿᴵᴳᴵᴺᴬᴸ•🐦‍🔥𝐊𝐀𝐙𝐀𝐍 vous invoque:\n`;await sock.sendMessage(from,{text:txt,mentions:t})} }
