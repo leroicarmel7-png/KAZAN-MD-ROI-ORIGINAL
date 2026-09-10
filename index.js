@@ -1,5 +1,5 @@
 import pkg from "@whiskeysockets/baileys"
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = pkg
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = pkg
 import { Boom } from "@hapi/boom"
 import pino from "pino"
 import fs from "fs"
@@ -31,9 +31,11 @@ async function loadCommands() {
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState("auth")
   const commands = await loadCommands()
+  const { version } = await fetchLatestBaileysVersion()
   console.log(`[KAZAN] ${commands.size} commandes chargées | Owner: ${botConfig.ownerName}`)
 
   const sock = makeWASocket({
+    version,
     auth: state,
     logger: pino({ level: "silent" }),
     printQRInTerminal: false,
