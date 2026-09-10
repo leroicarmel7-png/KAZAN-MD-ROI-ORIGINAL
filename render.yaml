@@ -1,6 +1,6 @@
 services:
     - type: web
-      name: kazan-md-roi-original
+    name: kazan-md-roi-original
     env: node
     plan: free
     buildCommand: npm install
