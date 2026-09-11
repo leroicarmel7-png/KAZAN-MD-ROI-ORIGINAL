@@ -1,6 +1,6 @@
 {
   "name": "kazan-md",
-  "type": "module",
+  "type": "commonjs",
   "version": "2.0.0",
   "main": "index.js",
   "scripts": {
