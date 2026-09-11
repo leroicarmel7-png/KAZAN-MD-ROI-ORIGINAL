@@ -19,7 +19,7 @@ const SESSION_DIR = './session'
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
 // Utilise ton numéro exact (22892608318) par défaut si non trouvé dans config.js
-const OWNER_NUMBER = String(config.owner?.[0] || '22892608318').replace(/[^0-9]/g, '')
+const OWNER_NUMBER = String(config.owner?.[0] || '22891847613').replace(/[^0-9]/g, '')
 
 let prefix = config.prefix || '.'
 let sudo = []
