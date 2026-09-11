@@ -1,565 +1,370 @@
-import pkg from "@whiskeysockets/baileys"
+const crypto = require('crypto')
+if (!global.crypto) global.crypto = crypto
 
 const {
   default: makeWASocket,
   useMultiFileAuthState,
-  DisconnectReason,
   fetchLatestBaileysVersion,
-  Browsers
-} = pkg
+  DisconnectReason
+} = require('@whiskeysockets/baileys')
 
-import { Boom } from "@hapi/boom"
-import pino from "pino"
-import fs from "fs"
-import path from "path"
-import { fileURLToPath } from "url"
-import { botConfig } from "./config.js"
-import http from "http"
+const P = require('pino')
+const fs = require('fs')
+const path = require('path')
+const config = require('./config')
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const DATA_DIR = './database'
+const SESSION_DIR = './session'
 
-let currentSock = null
-let currentPairingCode = null
-let pairingInProgress = false
-let reconnecting = false
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
-function cleanNumber(number) {
-  return String(number || "").replace(/[^0-9]/g, "")
+// Utilise ton numéro exact (22892608318) par défaut si non trouvé dans config.js
+const OWNER_NUMBER = String(config.owner?.[0] || '22892608318').replace(/[^0-9]/g, '')
+
+let prefix = config.prefix || '.'
+let sudo = []
+let selfMode = true
+let antilink = {}
+let welcome = {}
+let antimention = {}
+
+const files = {
+  sudo: path.join(DATA_DIR, 'sudo.json'),
+  settings: path.join(DATA_DIR, 'settings.json'),
+  prefix: path.join(DATA_DIR, 'prefix.json'),
+  self: path.join(DATA_DIR, 'self.json')
 }
 
-async function loadCommands() {
-  const commands = new Map()
-  const folders = ["group", "download", "tools", "game"]
-
-  for (const folder of folders) {
-    const folderPath = path.join(__dirname, "commands", folder)
-
-    if (!fs.existsSync(folderPath)) continue
-
-    for (const file of fs.readdirSync(folderPath)) {
-      if (!file.endsWith(".js")) continue
-
-      try {
-        const mod = await import(`./commands/${folder}/${file}`)
-        const cmd = mod.default
-
-        if (!cmd || !cmd.name) continue
-
-        commands.set(cmd.name, cmd)
-
-        if (cmd.alias) {
-          for (const alias of cmd.alias) {
-            commands.set(alias, cmd)
-          }
-        }
-      } catch (error) {
-        console.error(
-          `[𝐋Ξ𝐑Ø𝐈-MD] Impossible de charger ${folder}/${file}:`,
-          error
-        )
-      }
+function loadJSON(file, fallback) {
+  try {
+    if (!fs.existsSync(file)) {
+      fs.writeFileSync(file, JSON.stringify(fallback, null, 2), 'utf8')
+      return fallback
     }
-  }
-
-  return commands
+    return JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch (e) { return fallback }
 }
+function saveJSON(file, data) {
+  try { fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8') } catch {}
+}
+
+sudo = loadJSON(files.sudo, [])
+const settings = loadJSON(files.settings, { antilink: {}, welcome: {}, antimention: {} })
+antilink = settings.antilink || {}
+welcome = settings.welcome || {}
+antimention = settings.antimention || {}
+const savedPrefix = loadJSON(files.prefix, { prefix: config.prefix || '.' })
+prefix = savedPrefix.prefix || config.prefix || '.'
+const savedSelf = loadJSON(files.self, { selfMode: true })
+selfMode = savedSelf.selfMode !== false
+
+function cleanNumber(n){ return String(n||'').replace(/[^0-9]/g,'') }
+function jidNumber(jid){ return cleanNumber(String(jid||'').split('@')[0].split(':')[0]) }
+function isOwnerNumber(num){ return jidNumber(num) === OWNER_NUMBER }
+function isSudo(jid){ const number = jidNumber(jid); if(!number) return false; return sudo.some(s=>jidNumber(s)===number) }
+function isOwnerOrSudo(jid){ return isOwnerNumber(jid) || isSudo(jid) }
+function saveSettings(){ saveJSON(files.settings, { antilink, welcome, antimention }) }
+function saveSudo(){ saveJSON(files.sudo, sudo) }
+function savePrefix(){ saveJSON(files.prefix, { prefix }) }
+function saveSelf(){ saveJSON(files.self, { selfMode }) }
+const sleep = ms => new Promise(r=>setTimeout(r, ms))
 
 async function start() {
-  if (currentSock) {
-    console.log("[𝐋Ξ𝐑Ø𝐈-MD] Une connexion existe déjà.")
-    return currentSock
-  }
+  const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR)
+  const { version } = await fetchLatestBaileysVersion()
 
-  const { state, saveCreds } =
-    await useMultiFileAuthState("auth")
-
-  const commands = await loadCommands()
-
-  const { version } =
-    await fetchLatestBaileysVersion()
-
-  console.log(
-    `[𝐋Ξ𝐑Ø𝐈-MD] ${commands.size} commandes chargées | Owner: ${botConfig.ownerName}`
-  )
-
-  const sock = makeWASocket({
+  const conn = makeWASocket({
     version,
     auth: state,
-    logger: pino({ level: "silent" }),
-
-    printQRInTerminal: false,
-
-    browser: Browsers.ubuntu("Chrome"),
-
+    logger: P({ level: 'silent' }),
+    browser: ['KAZAN-MD', 'Chrome', '1.0'],
+    markOnlineOnConnect: true,
+    syncFullHistory: false,
     connectTimeoutMs: 60000,
-
-    defaultQueryTimeoutMs: 60000,
-
-    markOnlineOnConnect: false
+    defaultQueryTimeoutMs: 0,
+    keepAliveIntervalMs: 10000
   })
 
-  currentSock = sock
-
-  sock.ev.on("creds.update", saveCreds)
-
-  /*
-   * CONNEXION
-   */
-  sock.ev.on(
-    "connection.update",
-    async ({ connection, lastDisconnect }) => {
-
-      if (connection === "open") {
-        reconnecting = false
-        currentPairingCode = null
-        pairingInProgress = false
-
-        console.log(
-          "✅ 𝐋Ξ𝐑Ø𝐈-MD CONNECTÉ - /ROI†🌹ORIGINAL•🐦‍🔥KAZAN"
-        )
-
-        return
+  if (!state.creds.registered) {
+    console.log('🌋 Demande de code pairing pour : ' + OWNER_NUMBER)
+    setTimeout(async () => {
+      try {
+        const code = await conn.requestPairingCode(OWNER_NUMBER)
+        console.log('\n╔═════════════════════════════════════╗')
+        console.log('║      CODE PAIRING : ' + code + '       ║')
+        console.log('╚═════════════════════════════════════╝\n')
+      } catch (e) { 
+        console.log('Erreur pairing :', e.message)
       }
+    }, 3000)
+  }
 
-      if (connection === "close") {
+  conn.ev.on('creds.update', saveCreds)
 
-        const statusCode =
-          lastDisconnect?.error instanceof Boom
-            ? lastDisconnect.error.output?.statusCode
-            : undefined
+  conn.ev.on('connection.update', async update => {
+    const { connection, lastDisconnect } = update
+    if (connection === 'open') {
+      console.log('🌋 KAZAN-MD ONLINE')
+      try {
+        await conn.sendMessage(OWNER_NUMBER + '@s.whatsapp.net', { text: '🌋 KAZAN-MD EN LIGNE' })
+      } catch {}
+    }
+    if (connection === 'close') {
+      const statusCode = lastDisconnect?.error?.output?.statusCode
+      console.log('Connexion fermée (Code:', statusCode, '). Relance...')
+      setTimeout(() => start(), 3000)
+    }
+  })
 
-        console.log(
-          `[𝐋Ξ𝐑Ø𝐈-MD] Connexion fermée. Code: ${
-            statusCode || "inconnu"
-          }`
-        )
+  conn.ev.on('group-participants.update', async anu => {
+    try {
+      if (!welcome[anu.id]) return
+      if (anu.action !== 'add') return
+      for (const p of anu.participants) {
+        await conn.sendMessage(anu.id, { text: `🌹 Bienvenue @${jidNumber(p)} dans le volcan 🌋`, mentions: [p] })
+      }
+    } catch {}
+  })
 
-        currentSock = null
-        pairingInProgress = false
-        currentPairingCode = null
+  conn.ev.on('messages.upsert', async ({ messages }) => {
+    try {
+      const m = messages[0]
+      if (!m || !m.message || m.key.fromMe) return
+      const from = m.key.remoteJid
+      if (!from) return
+      const isGroup = from.endsWith('@g.us')
+      const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || m.message.documentMessage?.caption || ''
+      if (!body) return
+      const sender = m.key.participant || from
+      const senderNumber = jidNumber(sender)
+      const isOwner = isOwnerNumber(sender)
+      const isOwnerSudo = isOwnerOrSudo(sender)
 
-        if (
-          statusCode === DisconnectReason.loggedOut
-        ) {
-          console.log(
-            "❌ Session déconnectée. Supprime le dossier auth avant de refaire un jumelage."
-          )
-
+      if (isGroup && antilink[from] && (body.includes('https://') || body.includes('http://') || body.includes('chat.whatsapp.com'))) {
+        const meta = await conn.groupMetadata(from)
+        const participant = meta.participants.find(p => jidNumber(p.id) === senderNumber)
+        const isAdminCheck = !!participant?.admin
+        if (!isAdminCheck && !isOwnerSudo) {
+          await conn.sendMessage(from, { text: `🛡️ Antilink\n@${senderNumber} a envoyé un lien.`, mentions: [sender] }, { quoted: m })
+          try { await conn.groupParticipantsUpdate(from, [sender], 'remove') } catch {}
           return
         }
-
-        if (!reconnecting) {
-
-          reconnecting = true
-
-          setTimeout(() => {
-
-            start().catch(error => {
-
-              console.error(
-                "[𝐋Ξ𝐑Ø𝐈-MD] Erreur reconnexion:",
-                error
-              )
-
-              reconnecting = false
-
-            })
-
-          }, 5000)
-        }
       }
-    }
-  )
 
-  /*
-   * MESSAGES
-   */
-  sock.ev.on(
-    "messages.upsert",
-    async ({ messages }) => {
+      if (!body.startsWith(prefix)) return
+      const args = body.slice(prefix.length).trim().split(/\s+/)
+      const command = args.shift()?.toLowerCase()
+      const q = args.join(' ')
+      if (!command) return
+      if (selfMode && !isOwnerSudo) return
 
-      try {
+      const getGroupMetadata = async () => await conn.groupMetadata(from)
+      const isBotAdmin = async () => {
+        if (!isGroup) return false
+        const meta = await getGroupMetadata()
+        const botNumber = jidNumber(conn.user?.id)
+        const bot = meta.participants.find(p => jidNumber(p.id) === botNumber)
+        return !!bot?.admin
+      }
+      const isAdmin = async () => {
+        if (!isGroup) return false
+        const meta = await getGroupMetadata()
+        const participant = meta.participants.find(p => jidNumber(p.id) === senderNumber)
+        return !!participant?.admin
+      }
+      const reply = text => conn.sendMessage(from, { text }, { quoted: m })
 
-        const m = messages[0]
-
-        if (
-          !m ||
-          !m.message ||
-          m.key.fromMe
-        ) return
-
-        const from = m.key.remoteJid
-
-        if (!from) return
-
-        const isGroup =
-          from.endsWith("@g.us")
-
-        const body =
-          m.message.conversation ||
-          m.message.extendedTextMessage?.text ||
-          m.message.imageMessage?.caption ||
-          ""
-
-        if (
-          !body.startsWith(
-            botConfig.prefix
-          )
-        ) return
-
-        const args = body
-          .slice(
-            botConfig.prefix.length
-          )
-          .trim()
-          .split(/\s+/)
-
-        const cmdName =
-          args.shift()?.toLowerCase()
-
-        if (!cmdName) return
-
-        const command =
-          commands.get(cmdName)
-
-        if (!command) return
-
-        let isAdmin = false
-        let isBotAdmin = false
-        let groupMetadata = null
-
-        if (isGroup) {
-
+      switch (command) {
+        case 'menu': case 'alive': {
+          const menu = `╔═══━━━────━━━═══╗\n     🌋 KAZAN-MD 🌋\n       👑 FULL 31 👑\n╚═══━━━────━━━═══╝\n\n╭─ OWNER ╮\n│ • ${prefix}hidetag\n│ • ${prefix}count\n│ • ${prefix}gpid\n│ • ${prefix}sudo\n│ • ${prefix}delsudo\n│ • ${prefix}prefix\n│ • ${prefix}self\n│ • ${prefix}delself\n╰──────────────\n\n╭─ GROUP ╮\n│ • ${prefix}tag\n│ • ${prefix}tagall\n│ • ${prefix}tagadmin\n│ • ${prefix}gstatus\n│ • ${prefix}mute\n│ • ${prefix}unmute\n│ • ${prefix}kick\n│ • ${prefix}promote\n│ • ${prefix}demote\n│ • ${prefix}online\n│ • ${prefix}left\n│ • ${prefix}quiz\n╰──────────────\n\n╭─ SECURITY ╮\n│ • ${prefix}antilink\n│ • ${prefix}antimention\n│ • ${prefix}welcome\n╰──────────────\n\n╭─ KAZAN ╮\n│ • ${prefix}annihilation\n│ • ${prefix}raid1\n│ • ${prefix}raid2\n│ • ${prefix}raid3\n│ • ${prefix}raid4\n╰──────────────\n\n╭─ OTHER ╮\n│ • ${prefix}ping\n╰──────────────\n`
           try {
-
-            groupMetadata =
-              await sock.groupMetadata(
-                from
-              )
-
-            const sender =
-              m.key.participant ||
-              m.key.remoteJid
-
-            const participant =
-              groupMetadata.participants.find(
-                p => p.id === sender
-              )
-
-            const botId =
-              sock.user?.id
-
-            const botParticipant =
-              groupMetadata.participants.find(
-                p => p.id === botId
-              )
-
-            isAdmin =
-              participant?.admin !== undefined
-
-            isBotAdmin =
-              botParticipant?.admin !== undefined
-
-          } catch (error) {
-
-            console.error(
-              "[𝐋Ξ𝐑Ø𝐈-MD] Erreur metadata groupe:",
-              error
-            )
-          }
+            if (config.pp && fs.existsSync(config.pp)) {
+              await conn.sendMessage(from, { image: fs.readFileSync(config.pp), caption: menu }, { quoted: m })
+            } else { await reply(menu) }
+          } catch { await reply(menu) }
+          break
         }
-
-        /*
-         * MESSAGE CITÉ
-         */
-        const quoted =
-          m.message
-            .extendedTextMessage
-            ?.contextInfo
-            ?.quotedMessage
-
-        if (quoted) {
-
-          m.quoted = {
-
-            message: quoted,
-
-            isViewOnce:
-              quoted.viewOnceMessageV2 ||
-              quoted.viewOnceMessage,
-
-            participant:
-              m.message
-                .extendedTextMessage
-                ?.contextInfo
-                ?.participant
-          }
+        case 'ping': {
+          const startTime = Date.now()
+          await reply('🌋 Pong!')
+          await reply(`⚡ Latence : ${Date.now() - startTime}ms`)
+          break
         }
-
-        /*
-         * RÉPONSE
-         */
-        m.reply = text =>
-          sock.sendMessage(
-            from,
-            { text },
-            { quoted: m }
-          )
-
-        /*
-         * EXÉCUTION
-         */
-        try {
-
-          await command.execute(
-            sock,
-            m,
-            args,
-            {
-              isAdmin,
-              isBotAdmin,
-              groupMetadata,
-              from,
-              isGroup
+        case 'count': {
+          if (!isGroup) return reply('❌ Groupe seulement.')
+          const meta = await getGroupMetadata()
+          await reply(`🌋 Membres : ${meta.participants.length}`)
+          break
+        }
+        case 'gpid': { await reply(from); break }
+        case 'hidetag': {
+          if (!isGroup || !await isAdmin()) return
+          const meta = await getGroupMetadata()
+          const mentions = meta.participants.map(p => p.id)
+          const txt = q || '🌋 KAZAN HIDETAG'
+          await conn.sendMessage(from, { text: txt, mentions }, { quoted: m })
+          break
+        }
+        case 'sudo': {
+          if (!isOwner) return
+          const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0]
+          const user = mentioned || (q ? cleanNumber(q) + '@s.whatsapp.net' : null)
+          if (!user) return reply('❌ Tag ou numéro.')
+          if (isSudo(user)) return reply('⚠️ Déjà sudo.')
+          sudo.push(user); saveSudo()
+          await reply(`👑 Sudo ajouté : @${jidNumber(user)}`)
+          break
+        }
+        case 'delsudo': {
+          if (!isOwner) return
+          const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0]
+          const number = mentioned ? jidNumber(mentioned) : cleanNumber(q)
+          if (!number) return reply('❌ Tag ou numéro.')
+          sudo = sudo.filter(s => jidNumber(s) !== number); saveSudo()
+          await reply('👑 Sudo retiré.')
+          break
+        }
+        case 'prefix': {
+          if (!isOwner) return
+          if (!q) return reply(`⚙️ Prefix actuel : ${prefix}`)
+          prefix = q.trim(); savePrefix()
+          await reply(`⚙️ Prefix changé en : ${prefix}`)
+          break
+        }
+        case 'self': {
+          if (!isOwner) return
+          selfMode = true; saveSelf()
+          await reply('🔒 Mode privé ON')
+          break
+        }
+        case 'delself': {
+          if (!isOwner) return
+          selfMode = false; saveSelf()
+          await reply('🔓 Mode public ON.')
+          break
+        }
+        case 'tag': case 'tagall': {
+          if (!isGroup || !await isAdmin()) return
+          const meta = await getGroupMetadata()
+          const mentions = meta.participants.map(p => p.id)
+          await conn.sendMessage(from, { text: q || '🌋 KAZAN TAG 👑', mentions }, { quoted: m })
+          break
+        }
+        case 'tagadmin': {
+          if (!isGroup || !await isAdmin()) return
+          const meta = await getGroupMetadata()
+          const mentions = meta.participants.filter(p => p.admin).map(p => p.id)
+          await conn.sendMessage(from, { text: q || '👑 ADMINS TAG', mentions }, { quoted: m })
+          break
+        }
+        case 'gstatus': {
+          if (!isGroup) return
+          const meta = await getGroupMetadata()
+          await reply(`📊 ${meta.subject}\nMembres: ${meta.participants.length}\nID: ${from}`)
+          break
+        }
+        case 'mute': {
+          if (!isGroup || !await isBotAdmin() || !await isAdmin()) return
+          await conn.groupSettingUpdate(from, 'announcement')
+          await reply('🔒 Groupe fermé')
+          break
+        }
+        case 'unmute': {
+          if (!isGroup || !await isBotAdmin() || !await isAdmin()) return
+          await conn.groupSettingUpdate(from, 'not_announcement')
+          await reply('🔓 Groupe ouvert')
+          break
+        }
+        case 'kick': {
+          if (!isGroup || !await isBotAdmin() || !await isAdmin()) return
+          const user = m.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0]
+          if (!user) return reply('Tag la personne')
+          await conn.groupParticipantsUpdate(from, [user], 'remove')
+          await reply('👢 Kické')
+          break
+        }
+        case 'promote': {
+          if (!isGroup || !await isBotAdmin() || !await isAdmin()) return
+          const user = m.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0]
+          if (!user) return reply('Tag la personne')
+          await conn.groupParticipantsUpdate(from, [user], 'promote')
+          await reply('👑 Promu admin')
+          break
+        }
+        case 'demote': {
+          if (!isGroup || !await isBotAdmin() || !await isAdmin()) return
+          const user = m.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0]
+          if (!user) return reply('Tag la personne')
+          await conn.groupParticipantsUpdate(from, [user], 'demote')
+          await reply('Demote')
+          break
+        }
+        case 'online': {
+          if (!isGroup) return
+          const meta = await getGroupMetadata()
+          await reply(`🟢 ${meta.participants.length} membres`)
+          break
+        }
+        case 'left': {
+          await conn.sendMessage(from, { text: '🌋 sayonara - KAZAN quitte' })
+          await conn.groupLeave(from)
+          break
+        }
+        case 'quiz': {
+          const quiz = ["Quelle est la capitale du Togo? A)Lomé B)Cotonou", "2+2=? A)3 B)4", "KAZAN est? A)Volcan B)Glacier"]
+          await reply(`🧠 QUIZ: ${quiz[Math.floor(Math.random()*quiz.length)]}`)
+          break
+        }
+        case 'antilink': {
+          if (!isGroup || !await isAdmin()) return
+          if (!q || q === 'on') { antilink[from]=true; saveSettings(); await reply('🛡️ Antilink ON') }
+          else { delete antilink[from]; saveSettings(); await reply('🛡️ Antilink OFF') }
+          break
+        }
+        case 'welcome': {
+          if (!isGroup || !await isAdmin()) return
+          if (!q || q === 'on') { welcome[from]=true; saveSettings(); await reply('🌹 Welcome ON') }
+          else { delete welcome[from]; saveSettings(); await reply('🌹 Welcome OFF') }
+          break
+        }
+        case 'antimention': {
+          if (!isGroup || !await isAdmin()) return
+          if (!q || q === 'on') { antimention[from]=true; saveSettings(); await reply('🛡️ Antimention ON') }
+          else { delete antimention[from]; saveSettings(); await reply('🛡️ Antimention OFF') }
+          break
+        }
+        case 'annihilation': {
+          if (!isGroup || !await isBotAdmin() || !await isAdmin()) return reply('❌ Admin bot + Admin toi requis')
+          const meta = await getGroupMetadata()
+          await conn.sendMessage(from, { text: `🌋kazan 🐦‍🔥purification🐦‍🔥\n\n            Disparaissez` }, { quoted: m })
+          await sleep(1500)
+          const nonAdmins = meta.participants.filter((p) => !p.admin).map((p) => p.id)
+          if (nonAdmins.length > 0) {
+            try {
+              await conn.groupParticipantsUpdate(from, nonAdmins, 'remove')
+            } catch (error) {
+              return await reply('❌ Erreur annihilation: ' + error.message)
             }
-          )
-
-        } catch (error) {
-
-          console.error(
-            `[𝐋Ξ𝐑Ø𝐈-MD] Erreur commande ${cmdName}:`,
-            error
-          )
-
-          try {
-
-            await m.reply(
-              "❌ Erreur: " +
-              (
-                error?.message ||
-                "Erreur inconnue"
-              )
-            )
-
-          } catch {}
+          }
+          await conn.sendMessage(from, { text: `🌋 KAZAN PURIFICATION TERMINEE 🐦‍🔥\n${nonAdmins.length} membres expulsés - Volcan a parlé 👑` })
+          break
         }
-
-      } catch (error) {
-
-        console.error(
-          "[𝐋Ξ𝐑Ø𝐈-MD] Erreur message:",
-          error
-        )
+        case 'raid1': case 'raid2': case 'raid3': case 'raid4': {
+          if (!isGroup || !await isBotAdmin() || !await isAdmin()) return reply('Admin groupe seulement')
+          let data = config.raids?.[command]
+          if (!data) return reply('Raid config manquant')
+          try {
+            await conn.groupUpdateSubject(from, data.name)
+            await conn.groupUpdateDescription(from, data.desc)
+            if (data.pp) await conn.updateProfilePicture(from, { url: data.pp })
+            await reply(`🌋 ${command.toUpperCase()} exécuté - KAZAN A AVANCÉ 👑`)
+          } catch(e){ await reply('Erreur RAID: '+e.message) }
+          break
+        }
       }
-    }
-  )
-
-  /*
-   * DEMANDE DE CODE DE JUMELAGE
-   */
-  if (!state.creds.registered) {
-
-    const number = cleanNumber(
-      process.env.PHONE_NUMBER ||
-      botConfig.ownerNumber
-    )
-
-    if (!number) {
-
-      console.error(
-        "❌ Aucun numéro configuré."
-      )
-
-      return sock
-    }
-
-    console.log(
-      `📱 NUMÉRO UTILISÉ: ${number}`
-    )
-
-    /*
-     * Attente avant demande du code
-     */
-    await new Promise(
-      resolve =>
-        setTimeout(resolve, 5000)
-    )
-
-    if (
-      !sock.authState.creds.registered &&
-      !pairingInProgress &&
-      currentSock === sock
-    ) {
-
-      pairingInProgress = true
-
-      try {
-
-        const code =
-          await sock.requestPairingCode(
-            number
-          )
-
-        currentPairingCode = code
-
-        console.log("")
-        console.log(
-          "================================"
-        )
-        console.log(
-          "🔑 CODE DE JUMELAGE 𝐋Ξ𝐑Ø𝐈-MD"
-        )
-        console.log(
-          `   ${code}`
-        )
-        console.log(
-          "================================"
-        )
-        console.log("")
-
-        console.log(
-          "WhatsApp → Paramètres → Appareils liés →"
-        )
-
-        console.log(
-          "Lier un appareil → Lier avec un numéro de téléphone"
-        )
-
-      } catch (error) {
-
-        console.error(
-          "❌ IMPOSSIBLE DE GÉNÉRER LE CODE:",
-          error
-        )
-
-        currentPairingCode = null
-        pairingInProgress = false
-      }
-    }
-  }
-
-  return sock
+    } catch (e) { console.log('Erreur message:', e.message) }
+  })
 }
 
-/*
- * SERVEUR HTTP POUR RENDER
- */
-const server = http.createServer(
-  async (req, res) => {
-
-    /*
-     * PAGE PRINCIPALE
-     */
-    if (
-      req.method === "GET" &&
-      req.url === "/"
-    ) {
-
-      res.writeHead(200, {
-        "Content-Type":
-          "text/html; charset=utf-8"
-      })
-
-      res.end(`
-<!DOCTYPE html>
-
-<html>
-
-<head>
-
-<meta charset="UTF-8">
-
-<title>𝐋Ξ𝐑Ø𝐈-MD</title>
-
-</head>
-
-<body style="
-font-family:sans-serif;
-text-align:center;
-padding:40px;
-background:#111;
-color:#fff;
-">
-
-<h1>🔥 𝐋Ξ𝐑Ø𝐈-MD 🔥</h1>
-
-<p>
-Statut:
-${
-  currentSock
-    ? "🟢 Serveur actif"
-    : "🟠 Démarrage..."
-}
-</p>
-
-${
-  currentPairingCode
-    ? `
-<h2 style="color:#00ff66;">
-🔑 Code de jumelage
-</h2>
-
-<h1 style="letter-spacing:5px;">
-${currentPairingCode}
-</h1>
-
-<p>
-WhatsApp → Paramètres → Appareils liés →
-Lier un appareil → Lier avec un numéro
-</p>
-`
-    : `
-<p>
-Le code de jumelage apparaîtra ici lorsqu'il sera disponible.
-</p>
-`
-}
-
-</body>
-
-</html>
-`)
-
-      return
-    }
-
-    /*
-     * HEALTH CHECK RENDER
-     */
-    res.writeHead(200, {
-      "Content-Type":
-        "text/plain"
-    })
-
-    res.end(
-      "𝐋Ξ𝐑Ø𝐈-MD is running"
-    )
-  }
-)
-
-const PORT =
-  process.env.PORT || 3000
-
-server.listen(
-  PORT,
-  () => {
-
-    console.log(
-      `🌐 𝐋Ξ𝐑Ø𝐈-MD serveur actif sur le port ${PORT}`
-    )
-
-  }
-)
-
-/*
- * UNE SEULE INITIALISATION
- */
-start().catch(error => {
-
-  console.error(
-    "❌ Erreur démarrage 𝐋Ξ𝐑Ø𝐈-MD:",
-    error
-  )
-
-})
+start()
+            
